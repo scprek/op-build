@@ -1,0 +1,38 @@
+From f8754ad4158c8b5adaf07655e85ed6c3218adafe Mon Sep 17 00:00:00 2001
+From: Nick Bofferding <bofferdn@us.ibm.com>
+Date: Thu, 18 Aug 2016 20:50:39 -0500
+Subject: [PATCH] Set security vector to enable ROM verification
+
+---
+ firestone.xml | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/firestone.xml b/firestone.xml
+index 32941e9..9e7c6b2 100644
+--- a/firestone.xml
++++ b/firestone.xml
+@@ -6590,6 +6590,10 @@
+ 	<hidden_child_id>mcs-7</hidden_child_id>
+ 	<hidden_child_id>cpu_temp_sensor</hidden_child_id>
+ 	<hidden_child_id>cpu_func_sensor</hidden_child_id>
++    <attribute>
++        <id>PROC_SECURITY_SETUP_VECTOR</id>
++        <default>0xC000000080000000</default>
++    </attribute>
+ 	<attribute>
+ 		<id>CHIP_ID</id>
+ 		<default></default>
+@@ -9909,6 +9913,10 @@
+ 	<instance_name>module</instance_name>
+ 	<position>1</position>
+ 	<child_id>proc</child_id>
++    <attribute>
++        <id>PROC_SECURITY_SETUP_VECTOR</id>
++        <default>0xC000000080000000</default>
++    </attribute>
+ 	<attribute>
+ 		<id>CLASS</id>
+ 		<default>CARD</default>
+-- 
+1.8.2.2
+
