@@ -1,0 +1,72 @@
+From 332dcd5b5bc8eb24c7b1867179f6f35a767cb25e Mon Sep 17 00:00:00 2001
+From: Nick Bofferding <bofferdn@us.ibm.com>
+Date: Tue, 13 Sep 2016 00:24:23 -0500
+Subject: [PATCH 3/3] Install signing utility wrapper script
+
+---
+ Makefile.am         |  2 +-
+ configure.ac        |  1 +
+ scripts/Makefile.am | 29 +++++++++++++++++++++++++++++
+ 3 files changed, 31 insertions(+), 1 deletion(-)
+ create mode 100755 scripts/Makefile.am
+
+diff --git a/Makefile.am b/Makefile.am
+index e1df0e2..c4e014f 100755
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -26,4 +26,4 @@
+ # Import the c++11 detection macros in the m4 dir
+ ACLOCAL_AMFLAGS = -I m4
+ 
+-SUBDIRS = src
++SUBDIRS = src scripts
+diff --git a/configure.ac b/configure.ac
+index a6506e3..4d32d7e 100755
+--- a/configure.ac
++++ b/configure.ac
+@@ -118,6 +118,7 @@ AC_CONFIG_FILES([
+    Makefile 
+    src/Makefile
+    src/signtool/Makefile
++   scripts/Makefile
+ ])
+ 
+ AC_OUTPUT
+diff --git a/scripts/Makefile.am b/scripts/Makefile.am
+new file mode 100755
+index 0000000..4e5914c
+--- /dev/null
++++ b/scripts/Makefile.am
+@@ -0,0 +1,29 @@
++# IBM_PROLOG_BEGIN_TAG
++# This is an automatically generated prolog.
++#
++# $Source: scripts/Makefile.am $
++#
++# OpenPOWER sb-signing-utils Project
++#
++# Contributors Listed Below - COPYRIGHT 2016
++# [+] International Business Machines Corp.
++#
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#     http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
++# implied. See the License for the specific language governing
++# permissions and limitations under the License.
++#
++# IBM_PROLOG_END_TAG
++
++dist_bin_SCRIPTS = crtSignedContainer.pl
++
++install-exec-local:
++	$(INSTALL) -dv $(bindir)
+-- 
+1.8.2.2
+
