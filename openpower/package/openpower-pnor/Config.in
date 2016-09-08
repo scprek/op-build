@@ -15,6 +15,12 @@ config BR2_PACKAGE_OPENPOWER_PNOR
         help
             Utilites for building a targeting binary image
 
+config BR2_OPENPOWER_SECUREBOOT_ENABLED
+        bool "Securely sign code images"
+        default n
+        help
+            Securely sign code images; Hostboot config must 'set SECUREBOOT'
+
 config BR2_OPENPOWER_PNOR_XML_LAYOUT_FILENAME
         string "Name of Openpower pnor xml layout file"
         help
