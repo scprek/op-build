@@ -1,0 +1,27 @@
+From 5e8c1cba8e43f1916e10c6d463f8b6dfb0dc239f Mon Sep 17 00:00:00 2001
+From: Nick Bofferding <bofferdn@us.ibm.com>
+Date: Sat, 27 Aug 2016 21:38:29 -0500
+Subject: [PATCH 3/3] DO NOT INTEGRATE: SMC WORKAROUND: Make TPMs not required
+ until MRW has TPM in it
+
+Change-Id: I9e6771688ee2569cf610e83ffb82b33333228e1e
+---
+ src/usr/targeting/common/xmltohb/attribute_types.xml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/usr/targeting/common/xmltohb/attribute_types.xml b/src/usr/targeting/common/xmltohb/attribute_types.xml
+index 9238a53..ff4b66b 100644
+--- a/src/usr/targeting/common/xmltohb/attribute_types.xml
++++ b/src/usr/targeting/common/xmltohb/attribute_types.xml
+@@ -15329,7 +15329,7 @@ firmware notes: Platforms should initialize this attribute to AUTO (0)</descript
+     </description>
+     <simpleType>
+       <uint8_t>
+-        <default>1</default>
++        <default>0</default>
+       </uint8_t>
+     </simpleType>
+     <persistency>non-volatile</persistency>
+-- 
+1.8.2.2
+
