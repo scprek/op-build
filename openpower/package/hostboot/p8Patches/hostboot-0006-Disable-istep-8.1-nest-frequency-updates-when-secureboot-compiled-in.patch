@@ -1,0 +1,71 @@
+From a6729f3ca5dd4b42fe5ed5cba3287a492110379c Mon Sep 17 00:00:00 2001
+From: Nick Bofferding <bofferdn@us.ibm.com>
+Date: Thu, 15 Sep 2016 16:42:15 -0500
+Subject: [PATCH] Disable istep 8.1 nest frequency updates when secureboot
+ compiled in
+
+Change-Id: Ic05720841847389ff7a7bdc723b3037eb735fb61
+Reviewed-on: http://ralgit01.raleigh.ibm.com/gerrit1/29809
+Tested-by: Jenkins Server <pfd-jenkins+hostboot@us.ibm.com>
+Tested-by: Jenkins OP Build CI <op-jenkins+hostboot@us.ibm.com>
+Tested-by: FSP CI Jenkins <fsp-CI-jenkins+hostboot@us.ibm.com>
+Tested-by: Jenkins OP HW <op-hw-jenkins+hostboot@us.ibm.com>
+Reviewed-by: Stephen M. Cprek <smcprek@us.ibm.com>
+Reviewed-by: Daniel M. Crowell <dcrowell@us.ibm.com>
+Reviewed-by: William G. Hoffa <wghoffa@us.ibm.com>
+Reviewed-by: Matthew A. Ploetz <maploetz@us.ibm.com>
+---
+ .../hwp/edi_ei_initialization/edi_ei_initialization.C     | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/src/usr/hwpf/hwp/edi_ei_initialization/edi_ei_initialization.C b/src/usr/hwpf/hwp/edi_ei_initialization/edi_ei_initialization.C
+index 98a398a..4b56012 100644
+--- a/src/usr/hwpf/hwp/edi_ei_initialization/edi_ei_initialization.C
++++ b/src/usr/hwpf/hwp/edi_ei_initialization/edi_ei_initialization.C
+@@ -5,7 +5,7 @@
+ /*                                                                        */
+ /* OpenPOWER HostBoot Project                                             */
+ /*                                                                        */
+-/* Contributors Listed Below - COPYRIGHT 2012,2015                        */
++/* Contributors Listed Below - COPYRIGHT 2012,2016                        */
+ /* [+] International Business Machines Corp.                              */
+ /*                                                                        */
+ /*                                                                        */
+@@ -89,6 +89,8 @@
+     #include    <occ/occ_common.H>
+ #endif
+ 
++#include <config.h>
++
+ namespace   EDI_EI_INITIALIZATION
+ {
+ 
+@@ -117,6 +119,15 @@ void*    call_fabric_erepair( void    *io_pArgs )
+     TARGETING::Target* l_sys = NULL;
+     targetService().getTopLevelTarget(l_sys);
+     assert( l_sys != NULL, "call_fabric_erepair: sys target is NULL" );
++
++    // Updating nest frequencies before the SMP is configured is explicitly
++    // disabled when secureboot is compiled in.  Due to hardware security
++    // constraints, it's not possible to update non-master processor secured
++    // SEEPROMS when hardware security is turned on (via jumper setting).
++    // While it would technically be possible to do this when hardware security
++    // is turned off, it is not supported to prevent giving a false sense of
++    // security that it will work when hardware security is on.
++    #ifndef CONFIG_SECUREBOOT
+     MRW_NEST_CAPABLE_FREQUENCIES_SYS l_mrw_nest_capable;
+     l_mrw_nest_capable =
+                l_sys->getAttr<ATTR_MRW_NEST_CAPABLE_FREQUENCIES_SYS>();
+@@ -136,8 +147,8 @@ void*    call_fabric_erepair( void    *io_pArgs )
+             errlCommit( l_errl, HWPF_COMP_ID );
+             break;
+         }
+-
+     }
++    #endif
+ 
+     std::vector<uint8_t> l_endp1_txFaillanes;
+     std::vector<uint8_t> l_endp1_rxFaillanes;
+-- 
+1.8.2.2
+

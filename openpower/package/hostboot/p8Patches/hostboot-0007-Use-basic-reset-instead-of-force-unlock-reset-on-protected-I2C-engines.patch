@@ -1,0 +1,79 @@
+From ef8d25f171357a05c80b87b48407bd975fd8cec4 Mon Sep 17 00:00:00 2001
+From: Nick Bofferding <bofferdn@us.ibm.com>
+Date: Tue, 20 Sep 2016 14:27:57 -0500
+Subject: [PATCH] Use basic reset instead of force unlock reset on protected
+ I2C engines
+
+Change-Id: I3d97dde1f5bf08b0aede74eb0c30bc8e78fdedf9
+Reviewed-on: http://ralgit01.raleigh.ibm.com/gerrit1/29986
+Reviewed-by: Stephen M. Cprek <smcprek@us.ibm.com>
+Tested-by: Jenkins Server <pfd-jenkins+hostboot@us.ibm.com>
+Tested-by: Jenkins OP Build CI <op-jenkins+hostboot@us.ibm.com>
+Tested-by: Jenkins OP HW <op-hw-jenkins+hostboot@us.ibm.com>
+Tested-by: FSP CI Jenkins <fsp-CI-jenkins+hostboot@us.ibm.com>
+Reviewed-by: Michael Baiocchi <mbaiocch@us.ibm.com>
+Reviewed-by: William G. Hoffa <wghoffa@us.ibm.com>
+---
+ src/usr/i2c/i2c.C | 19 +++++++++++--------
+ 1 file changed, 11 insertions(+), 8 deletions(-)
+
+diff --git a/src/usr/i2c/i2c.C b/src/usr/i2c/i2c.C
+index af228b7..4ad0482 100755
+--- a/src/usr/i2c/i2c.C
++++ b/src/usr/i2c/i2c.C
+@@ -3174,14 +3174,17 @@ errlHndl_t i2cProcessActiveMasters ( i2cProcessType      i_processType,
+                     continue;
+                 }
+ 
+-                // Do not do FSI I2C resets on engine 0 of slave processors
+-                // if security is asserted via jumper to that processor.
++                // Do not do FSI I2C force unlock resets on engine 0 of slave
++                // processors if security is asserted via jumper to that
++                // processor.  Instead, do a basic reset, because that is
++                // tolerated by the hardware securiy restrictions.
+                 // NOTE: getJumperState() returns state of master processor's
+                 //       jumper (true==secure).  Since all secure jumpers
+                 //       are required to have the same configuration in a
+                 //       system, the master processor jumper bit is used as a
+                 //       proxy for all slave processors.
+                 // NOTE: Master Proc never uses FSI
++                i2c_reset_level opResetLevel = FORCE_UNLOCK_RESET;
+                 if ( (i_processOperation & I2C_OP_RESET) &&
+                      (engine == 0) &&
+                      (io_args.switches.useFsiI2C == 1) &&
+@@ -3191,17 +3194,17 @@ errlHndl_t i2cProcessActiveMasters ( i2cProcessType      i_processType,
+                    )
+                 {
+                     TRACUCOMP( g_trac_i2c,INFO_MRK
+-                               "i2cProcessActiveMasters: skipping tgt=0x%X "
++                               "i2cProcessActiveMasters: for tgt=0x%08X, "
+                                "due to ResetOp(%d), useFsiI2C(%d), engine (%d),"
+-                               " TYPE(%d) --AND-- getJumperState(%d)",
++                               " TYPE(%d) --AND-- getJumperState(%d), "
++                               "use basic reset type",
+                                TARGETING::get_huid(tgt), i_processOperation,
+                                io_args.switches.useFsiI2C, engine,
+                                tgt->getAttr<TARGETING::ATTR_TYPE>(),
+                                SECUREBOOT::getJumperState());
+-                    continue;
++                    opResetLevel=BASIC_RESET;
+                 }
+ 
+-
+                 // Look for any device on this engine based on speed_array
+                 bool skip = true;
+                 for ( size_t j = 0; j < I2C_BUS_ATTR_MAX_PORT; j++ )
+@@ -3304,8 +3307,8 @@ errlHndl_t i2cProcessActiveMasters ( i2cProcessType      i_processType,
+                                   "i2cProcessActiveMasters: reset engine: %d",
+                                   engine );
+ 
+-                            err = i2cReset ( tgt, io_args,
+-                                     FORCE_UNLOCK_RESET);
++                            err = i2cReset (tgt, io_args,
++                                            opResetLevel);
+                             if( err )
+                             {
+                                 TRACFCOMP( g_trac_i2c,ERR_MRK
+-- 
+1.8.2.2
+
