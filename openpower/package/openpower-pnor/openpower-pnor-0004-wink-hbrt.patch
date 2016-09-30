@@ -1,0 +1,59 @@
+From c38bd27dd7200f6f6521a118d54c459b7f36d8b8 Mon Sep 17 00:00:00 2001
+From: Stephen Cprek <smcprek@us.ibm.com>
+Date: Wed, 5 Oct 2016 16:46:11 -0500
+Subject: [PATCH] Support for HBRT and WINK
+
+---
+ update_image.pl | 15 +++++----------
+ 1 file changed, 5 insertions(+), 10 deletions(-)
+
+diff --git a/update_image.pl b/update_image.pl
+index 23e9edb..c6e63e2 100755
+--- a/update_image.pl
++++ b/update_image.pl
+@@ -142,6 +142,10 @@ sub processConvergedSections {
+     $sections{PAYLOAD}{in}  = "$payload.bin";
+     $sections{PAYLOAD}{out} = "$scratch_dir/$payload_filename";
+     $sections{SBKT}{out} = "$scratch_dir/SBKT.bin";
++    $sections{WINK}{in} = "$hb_binary_dir/$wink_binary_filename";
++    $sections{WINK}{out} = "$scratch_dir/$wink_binary_filename";
++    $sections{HBRT}{in} = "$hb_image_dir/img/hostboot_runtime.bin";
++    $sections{HBRT}{out} = "$scratch_dir/hostboot_runtime.header.bin.ecc";
+ 
+     # Build up the system bin files specification
+     my $system_bin_files;
+@@ -199,7 +203,7 @@ sub processConvergedSections {
+ 
+         # Determine whether to securely sign the images
+         my $securebootArg = $secureboot ? "--secureboot" : "";
+-        # Determine whether a key transition should take place 
++        # Determine whether a key transition should take place
+         my $keyTransitionArg = $key_transition ? "--key-transition" : "";
+ 
+         # Process each image
+@@ -233,13 +237,6 @@ sub processConvergedSections {
+ 
+ processConvergedSections();
+ 
+-run_command("env echo -en VERSION\\\\0 > $scratch_dir/hostboot_runtime.sha.bin");
+-run_command("sha512sum $hb_image_dir/img/hostboot_runtime.bin | awk \'{print \$1}\' | xxd -pr -r >> $scratch_dir/hostboot_runtime.sha.bin");
+-run_command("dd if=$scratch_dir/hostboot_runtime.sha.bin of=$scratch_dir/hostboot.temp.bin ibs=4k conv=sync");
+-run_command("cat $hb_image_dir/img/hostboot_runtime.bin >> $scratch_dir/hostboot.temp.bin");
+-run_command("dd if=$scratch_dir/hostboot.temp.bin of=$scratch_dir/hostboot_runtime.header.bin ibs=3072K conv=sync");
+-run_command("ecc --inject $scratch_dir/hostboot_runtime.header.bin --output $scratch_dir/hostboot_runtime.header.bin.ecc --p8");
+-
+ #Create blank binary file for HB Errorlogs (HBEL) Partition
+ run_command("dd if=/dev/zero bs=128K count=1 | tr \"\\000\" \"\\377\" > $scratch_dir/hostboot.temp.bin");
+ run_command("ecc --inject $scratch_dir/hostboot.temp.bin --output $scratch_dir/hbel.bin.ecc --p8");\
+@@ -291,8 +288,6 @@ run_command("ecc --inject $scratch_dir/hostboot.temp.bin --output $scratch_dir/s
+ run_command("dd if=$openpower_version_filename of=$scratch_dir/openpower_version.temp ibs=4K conv=sync");
+ run_command("cp $scratch_dir/openpower_version.temp $openpower_version_filename");
+ 
+-#Copy Binary Data files for consistency
+-run_command("cp $hb_binary_dir/$wink_binary_filename $scratch_dir/");
+ 
+ #END MAIN
+ #-------------------------------------------------------------------------
+-- 
+2.9.2
+

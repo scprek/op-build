@@ -26,10 +26,16 @@ endif
 
 ifeq ($(BR2_OPENPOWER_PNOR_XZ_ENABLED),y)
 OPENPOWER_PNOR_DEPENDENCIES += host-xz
+XZ_ARG=-xz_compression
 endif
 
 ifeq ($(BR2_OPENPOWER_SECUREBOOT_ENABLED),y)
 OPENPOWER_PNOR_DEPENDENCIES += host-sb-signing-utils
+SECUREBOOT_ARG =-secureboot
+endif
+
+ifeq ($(BR2_OPENPOWER_SECUREBOOT_KEY_TRANSITION),y)
+KEY_TRANSITION_ARG=-key_transition
 endif
 
 OPENPOWER_PNOR_INSTALL_IMAGES = YES
@@ -63,8 +69,7 @@ define OPENPOWER_PNOR_INSTALL_IMAGES_CMDS
             -payload $(BINARIES_DIR)/$(BR2_SKIBOOT_LID_NAME) \
 			-payload_filename $(BR2_SKIBOOT_LID_XZ_NAME) \
             -pnor_layout $(@D)/$(BR2_OPENPOWER_PNOR_XML_LAYOUT_FILENAME) \
-            $(if ($(BR2_OPENPOWER_PNOR_XZ_ENABLED),y),-xz_compression) \
-            $(if ($(BR2_OPENPOWER_SECUREBOOT_ENABLED),y),-secureboot)
+            $(XZ_ARG) $(SECUREBOOT_ARG) $(KEY_TRANSITION_ARG)
 
         mkdir -p $(STAGING_DIR)/pnor/
         $(TARGET_MAKE_ENV) $(@D)/create_pnor_image.pl \
