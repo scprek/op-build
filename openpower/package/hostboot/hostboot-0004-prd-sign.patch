@@ -1,0 +1,621 @@
+From e1a435d0abd20e99a4d5276eb792e340b89b0f3a Mon Sep 17 00:00:00 2001
+From: Stephen Cprek <smcprek@us.ibm.com>
+Date: Mon, 17 Oct 2016 10:07:40 -0500
+Subject: [PATCH 1/2] Rearrange genPnorImages to accomodate prod signing
+ changes
+
+Change-Id: I42402cec44cc98fcaf09d44ca0296ad08370fb5f
+RTC: 157351
+---
+ src/build/buildpnor/genPnorImages.pl | 219 +++++++++++++++++++----------------
+ 1 file changed, 122 insertions(+), 97 deletions(-)
+
+diff --git a/src/build/buildpnor/genPnorImages.pl b/src/build/buildpnor/genPnorImages.pl
+index c39322a..9b8c475 100755
+--- a/src/build/buildpnor/genPnorImages.pl
++++ b/src/build/buildpnor/genPnorImages.pl
+@@ -122,44 +122,51 @@ if ($help)
+     exit 0;
+ }
+ 
+-# Hardcoded defined order that binfiles should be handled.
+-my %partitionDeps = ( HBB => 0,
+-                      HBI => 1);
++################################################################################
++# Environment Setup, Checking, and Variable Initialization
++################################################################################
+ 
+-# Custom sort to ensure images are handled in the correct dependency order.
+-# If a dependency is not specified in the hash used, use default behavior.
+-sub partitionDepSort
++if ($secureboot)
+ {
+-    # If $a exists but $b does not, set $a < $b
+-    if (exists $partitionDeps{$a} && !exists $partitionDeps{$b})
+-    {
+-        -1
+-    }
+-    # If $a does not exists but $b does, set $a > $b
+-    elsif (!exists $partitionDeps{$a} && exists $partitionDeps{$b})
+-    {
+-        1
+-    }
+-    # If both $a and $b exist, actually compare values.
+-    elsif (exists $partitionDeps{$a} && exists $partitionDeps{$b})
++    # Ensure all values of partitionsToCorrupt hash are valid.
++    # Allow some flexibiliy for the user and do a regex, case insensitive check
++    # to properly clean up the corrupt partition hash.
++    foreach my $key (keys %partitionsToCorrupt)
+     {
+-        if ($partitionDeps{$a} < $partitionDeps{$b}) {-1}
+-        elsif ($partitionDeps{$a} > $partitionDeps{$b}) {1}
+-        else {0}
++        my $value = $partitionsToCorrupt{$key};
++        # ${\(CONST)} is the syntax to allow mixing other regex options like '^'
++        # and '/i' with a perl constant
++        if ($value eq "" || $value =~ m/^${\(CORRUPT_PROTECTED)}/i)
++        {
++            $partitionsToCorrupt{uc($key)} = CORRUPT_PROTECTED
++        }
++        elsif ($value =~ m/^${\(CORRUPT_UNPROTECTED)}/i)
++        {
++            $partitionsToCorrupt{uc($key)} = CORRUPT_UNPROTECTED;
++        }
++        else
++        {
++            die "Error> Unsupported option for --corrupt, value \"$key=$value\"";
++        }
+     }
+-    # If neither $a or $b have a dependency, order doesn't matter
+-    else {0}
+ }
+ 
+-################################################################################
+-# main
+-################################################################################
+-
+ # @TODO RTC: 155374 add official signing support including up to 3 sw keys
+ # Signing and Dev key directory location set via env vars
+ my $SIGNING_DIR = $ENV{'SIGNING_DIR'};
+ my $DEV_KEY_DIR = $ENV{'DEV_KEY_DIR'};
+ 
++if ($secureboot)
++{
++    # Check all components needed for developer signing
++    die "Signing Dir = $SIGNING_DIR DNE" if(! -d $SIGNING_DIR);
++    die "Dev Key Dir = $DEV_KEY_DIR DNE" if(! -d $DEV_KEY_DIR);
++    die "hw_key_a DNE in $DEV_KEY_DIR" if(!glob("$DEV_KEY_DIR/hw_key_a*"));
++    die "hw_key_b DNE in $DEV_KEY_DIR" if(!glob("$DEV_KEY_DIR/hw_key_b*"));
++    die "hw_key_c DNE in $DEV_KEY_DIR" if(!glob("$DEV_KEY_DIR/hw_key_c*"));
++    die "sw_key_a DNE in $DEV_KEY_DIR" if(!glob("$DEV_KEY_DIR/sw_key_a*"));
++}
++
+ my $openSigningTool = 0;
+ my $SIGNING_TOOL_EDITION = $ENV{'SIGNING_TOOL_EDITION'};
+ if($SIGNING_TOOL_EDITION eq COMMUNITY)
+@@ -167,8 +174,7 @@ if($SIGNING_TOOL_EDITION eq COMMUNITY)
+     $openSigningTool = 1;
+ }
+ 
+-
+-# Secureboot command strings
++### Local development signing
+ # Requires naming convention of hw/sw keys in DEV_KEY_DIR
+ my $SIGN_BUILD_PARAMS = "-skp ${DEV_KEY_DIR}/sw_key_a";
+ 
+@@ -188,6 +194,24 @@ if ( $testRun )
+             . "-skp ${DEV_KEY_DIR}/sw_key_a";
+ }
+ 
++### Open POWER signing
++my $OPEN_SIGN_REQUEST="$SIGNING_DIR/crtSignedContainer.pl -v "
++    . "-hwPrivKeyA $DEV_KEY_DIR/hw_key_a.key "
++    . "-hwPrivKeyB $DEV_KEY_DIR/hw_key_b.key "
++    . "-hwPrivKeyC $DEV_KEY_DIR/hw_key_c.key "
++    . "-swPrivKeyP $DEV_KEY_DIR/sw_key_a.key ";
++
++# Key prefix used for secureboot key transition partition.
++# Default key transition to same keys.
++my $OPEN_SIGN_KEY_TRANS_REQUEST =  $OPEN_SIGN_REQUEST;
++if ( $testRun )
++{
++    # Note: simply reordered the keys to create a pseudo production key.
++    $OPEN_SIGN_KEY_TRANS_REQUEST =  "-hka ${DEV_KEY_DIR}/hw_key_c -hkb "
++            . "${DEV_KEY_DIR}/hw_key_b -hkc ${DEV_KEY_DIR}/hw_key_a "
++            . "-skp ${DEV_KEY_DIR}/sw_key_a";
++}
++
+ # Secureboot headers
+ # Contains the appropriate flags, prefix, and file names.
+ my $randPrefix = "rand-".POSIX::ceil(rand(0xFFFFFFFF));
+@@ -211,85 +235,50 @@ my %sb_hdrs = (
+     }
+ );
+ 
+-my $OPEN_SIGN_REQUEST="$SIGNING_DIR/crtSignedContainer.pl -v "
+-    . "-hwPrivKeyA $DEV_KEY_DIR/hw_key_a.key "
+-    . "-hwPrivKeyB $DEV_KEY_DIR/hw_key_b.key "
+-    . "-hwPrivKeyC $DEV_KEY_DIR/hw_key_c.key "
+-    . "-swPrivKeyP $DEV_KEY_DIR/sw_key_a.key ";
+-
+-# Key prefix used for secureboot key transition partition.
+-# Default key transition to same keys.
+-my $OPEN_SIGN_KEY_TRANS_REQUEST =  $OPEN_SIGN_REQUEST;
+-if ( $testRun )
+-{
+-    # Note: simply reordered the keys to create a pseudo production key.
+-    $OPEN_SIGN_KEY_TRANS_REQUEST =  "-hka ${DEV_KEY_DIR}/hw_key_c -hkb "
+-            . "${DEV_KEY_DIR}/hw_key_b -hkc ${DEV_KEY_DIR}/hw_key_a "
+-            . "-skp ${DEV_KEY_DIR}/sw_key_a";
+-}
++################################################################################
++# main
++################################################################################
+ 
+-if ($secureboot)
++# Print all settings in one print statement to avoid parallel build to mess
++# up output.
++my $SETTINGS = "\n//========== Generate PNOR Image Settings ==========/\n";
++$SETTINGS .= $build_all ? "Build Phase = build_all\n" : "";
++$SETTINGS .= $install_all ? "Build Phase = install_all\n" : "";
++$SETTINGS .= $testRun ? "Test Mode = Yes\n" : "Test Mode = No\n";
++$SETTINGS .= $secureboot ? "Secureboot = Enabled\n" : "Secureboot = Disabled\n";
++$SETTINGS .= %partitionsToCorrupt && $secureboot ? "Corrupt Partitions: ".Dumper \%partitionsToCorrupt : "";
++$SETTINGS .= "//====================================================//\n\n";
++print $SETTINGS;
++
++if($secureboot && !$openSigningTool)
+ {
+-    # Check all components needed for developer signing
+-    die "Signing Dir = $SIGNING_DIR DNE" if(! -d $SIGNING_DIR);
+-    die "Dev Key Dir = $DEV_KEY_DIR DNE" if(! -d $DEV_KEY_DIR);
+-    die "hw_key_a DNE in $DEV_KEY_DIR" if(!glob("$DEV_KEY_DIR/hw_key_a*"));
+-    die "hw_key_b DNE in $DEV_KEY_DIR" if(!glob("$DEV_KEY_DIR/hw_key_b*"));
+-    die "hw_key_c DNE in $DEV_KEY_DIR" if(!glob("$DEV_KEY_DIR/hw_key_c*"));
+-    die "sw_key_a DNE in $DEV_KEY_DIR" if(!glob("$DEV_KEY_DIR/sw_key_a*"));
+-
+-    # Ensure all values of partitionsToCorrupt hash are valid.
+-    # Allow some flexibiliy for the user and do a regex, case insensitive check
+-    # to properly clean up the corrupt partition hash.
+-    foreach my $key (keys %partitionsToCorrupt)
++    # Generate each secureboot header file
++    foreach my $header (keys %sb_hdrs)
+     {
+-        my $value = $partitionsToCorrupt{$key};
+-        # ${\(CONST)} is the syntax to allow mixing other regex options like '^'
+-        # and '/i' with a perl constant
+-        if ($value eq "" || $value =~ m/^${\(CORRUPT_PROTECTED)}/i)
+-        {
+-            $partitionsToCorrupt{uc($key)} = CORRUPT_PROTECTED
+-        }
+-        elsif ($value =~ m/^${\(CORRUPT_UNPROTECTED)}/i)
++        next if($header eq "SBKT" && !$key_transition);
++
++        # SBKT parition has 2 sections outer and inner, need to create both
++        if ($header eq "SBKT")
+         {
+-            $partitionsToCorrupt{uc($key)} = CORRUPT_UNPROTECTED;
++            foreach my $section (keys %{$sb_hdrs{$header}})
++            {
++                run_command("$SIGNING_DIR/prefix -good -of $sb_hdrs{$header}{$section}{file}".
++                            LOCAL_SIGNING_FLAG."$sb_hdrs{$header}{$section}{flags}".
++                            " $sb_hdrs{$header}{$section}{prefix}");
++            }
+         }
+         else
+         {
+-            die "Error> Unsupported option for --corrupt, value \"$key=$value\"";
++            run_command("$SIGNING_DIR/prefix -good -of $sb_hdrs{$header}{file}".
++                        LOCAL_SIGNING_FLAG."$sb_hdrs{$header}{flags}".
++                        " $sb_hdrs{$header}{prefix}");
+         }
+     }
+ 
+-    if(!$openSigningTool)
++    # Generate test containers once and limit to build phase
++    if ($build_all)
+     {
+-        # Generate each secureboot header file
+-        foreach my $header (keys %sb_hdrs)
+-        {
+-            next if($header eq "SBKT" && !$key_transition);
+-
+-            # SBKT parition has 2 sections outer and inner, need to create both
+-            if ($header eq "SBKT")
+-            {
+-                foreach my $section (keys %{$sb_hdrs{$header}})
+-                {
+-                    run_command("$SIGNING_DIR/prefix -good -of $sb_hdrs{$header}{$section}{file}".
+-                        LOCAL_SIGNING_FLAG."$sb_hdrs{$header}{$section}{flags}".
+-                        " $sb_hdrs{$header}{$section}{prefix}");
+-                }
+-            }
+-            else
+-            {
+-                run_command("$SIGNING_DIR/prefix -good -of $sb_hdrs{$header}{file}".
+-                            LOCAL_SIGNING_FLAG."$sb_hdrs{$header}{flags}".
+-                            " $sb_hdrs{$header}{prefix}");
+-            }
+-        }
+-
+-        # Generate test containers once and limit to build phase
+-        if ($build_all)
+-        {
+-            gen_test_containers();
+-        }
++        gen_test_containers();
+     }
+ }
+ 
+@@ -340,6 +329,42 @@ foreach my $header (keys %sb_hdrs)
+ }
+ 
+ ################################################################################
++# Subroutines
++################################################################################
++
++################################################################################
++# partitionDepSort
++# Custom sort to ensure images are handled in the correct dependency order.
++# If a dependency is not specified in the hash used, use default behavior.
++################################################################################
++# Hardcoded defined order that binfiles should be handled.
++my %partitionDeps = ( HBB => 0,
++                      HBI => 1);
++
++sub partitionDepSort
++{
++    # If $a exists but $b does not, set $a < $b
++    if (exists $partitionDeps{$a} && !exists $partitionDeps{$b})
++    {
++        -1
++    }
++    # If $a does not exists but $b does, set $a > $b
++    elsif (!exists $partitionDeps{$a} && exists $partitionDeps{$b})
++    {
++        1
++    }
++    # If both $a and $b exist, actually compare values.
++    elsif (exists $partitionDeps{$a} && exists $partitionDeps{$b})
++    {
++        if ($partitionDeps{$a} < $partitionDeps{$b}) {-1}
++        elsif ($partitionDeps{$a} > $partitionDeps{$b}) {1}
++        else {0}
++    }
++    # If neither $a or $b have a dependency, order doesn't matter
++    else {0}
++}
++
++################################################################################
+ # manipulateImages - Perform any ECC/padding/sha/signing manipulations
+ ################################################################################
+ sub manipulateImages
+-- 
+2.9.2
+
+
+From 07b5542d807b096d0e71c470d8da91342a3683b6 Mon Sep 17 00:00:00 2001
+From: Stephen Cprek <smcprek@us.ibm.com>
+Date: Tue, 11 Oct 2016 10:14:39 -0500
+Subject: [PATCH 2/2] Enable op-build production signing mode in build pnor
+ process
+
+Change-Id: I4753c3a5f26ac4d124e1b163acd4d4dcb85700d2
+RTC: 157351
+---
+ src/build/buildpnor/genPnorImages.pl | 155 +++++++++++++++++++++++++++--------
+ src/build/tools/hb                   |   3 +-
+ 2 files changed, 124 insertions(+), 34 deletions(-)
+
+diff --git a/src/build/buildpnor/genPnorImages.pl b/src/build/buildpnor/genPnorImages.pl
+index 9b8c475..b10eed5 100755
+--- a/src/build/buildpnor/genPnorImages.pl
++++ b/src/build/buildpnor/genPnorImages.pl
+@@ -90,10 +90,24 @@ use constant MAX_PAGES_TO_CORRUPT => 10;
+ # rand file prefix string. Note hbDistribute cleans up files with this prefix
+ use constant RAND_PREFIX => "rand-";
+ 
++# Signing modes
++use constant DEVELOPMENT => "development";
++use constant IMPRINT => "imprint";
++use constant PRODUCTION => "production";
++
++# Op-build paths
++use constant OPBUILD_DIR => $ENV{'BR2_EXTERNAL'};
++use constant SB_SIGNING_UTILS => "sb-signing-utils";
++use constant SB_SIGNING_UTILS_CONFIG_DIR => OPBUILD_DIR."/package/".SB_SIGNING_UTILS."/configs";
++use constant SB_SERVER_CONFIG => "server.config";
++use constant SB_SERVER_CONFIG_PATH => SB_SIGNING_UTILS_CONFIG_DIR."/".SB_SERVER_CONFIG;
++
++
+ ################################################################################
+ # I/O parsing
+ ################################################################################
+ 
++my %globals = ();
+ my $bin_dir = cwd();
+ my $secureboot = 0;
+ my $testRun = 0;
+@@ -101,9 +115,11 @@ my $pnorLayoutFile = "";
+ my $system_target = "";
+ my $build_all = 0;
+ my $install_all = 0;
+-my $key_transition = 0;
++my $key_transition = "";
+ my $help = 0;
+ my %partitionsToCorrupt = ();
++my $sign_mode = DEVELOPMENT;
++my $machine = "";
+ 
+ GetOptions("binDir:s" => \$bin_dir,
+            "secureboot" => \$secureboot,
+@@ -112,8 +128,10 @@ GetOptions("binDir:s" => \$bin_dir,
+            "systemBinFiles:s" => \@systemBinFiles,
+            "build-all" => \$build_all,
+            "install-all" => \$install_all,
+-           "key-transition" => \$key_transition,
++           "key-transition:s" => \$key_transition,
+            "corrupt:s" => \%partitionsToCorrupt,
++           "sign-mode:s" => \$sign_mode,
++           "machine:s" => \$machine,
+            "help" => \$help);
+ 
+ if ($help)
+@@ -126,10 +144,49 @@ if ($help)
+ # Environment Setup, Checking, and Variable Initialization
+ ################################################################################
+ 
++# Put mode transition input into a hash and ensure a valid signing mode
++my %signMode = ( DEVELOPMENT() => 1 );
++if ($sign_mode =~ m/${\(DEVELOPMENT)}/i)
++{}
++elsif ($sign_mode =~ m/${\(PRODUCTION)}/i)
++{
++    $signMode{PRODUCTION()} = 1;
++    $signMode{DEVELOPMENT()} = 0;
++}
++else
++{
++    die "Invalid signing mode = $sign_mode";
++}
++
++# Machine name only required in production mode.
++if ($signMode{PRODUCTION()})
++{
++    die "Machine name not provided" if ($machine eq "");
++}
++# Set machine specific sb signing config file path
++my $SB_PROJECT_CONFIG_PATH = SB_SIGNING_UTILS_CONFIG_DIR."/$machine.config";
++
++# Put key transition input into a hash and ensure a valid key transition mode
++my %keyTransition = ( enabled => 0 );
++if ($key_transition =~ m/${\(IMPRINT)}/i)
++{
++    $keyTransition{IMPRINT()} = 1;
++    $keyTransition{enabled} = 1;
++}
++elsif ($key_transition =~ m/${\(PRODUCTION)}/i)
++{
++    $keyTransition{PRODUCTION()} = 1;
++    $keyTransition{enabled} = 1;
++}
++elsif ($key_transition ne "")
++{
++    die "Invalid key transition mode = $key_transition";
++}
++
+ if ($secureboot)
+ {
+     # Ensure all values of partitionsToCorrupt hash are valid.
+-    # Allow some flexibiliy for the user and do a regex, case insensitive check
++    # Allow some flexibility for the user and do a regex, case insensitive check
+     # to properly clean up the corrupt partition hash.
+     foreach my $key (keys %partitionsToCorrupt)
+     {
+@@ -186,7 +243,7 @@ my $SIGN_PREFIX_PARAMS = "-hka ${DEV_KEY_DIR}/hw_key_a -hkb "
+ # Key prefix used for secureboot key transition partition.
+ # Default key transition to same keys.
+ my $SIGN_SBKT_PREFIX_PARAMS =  $SIGN_PREFIX_PARAMS;
+-if ( $testRun )
++if ($keyTransition{enabled})
+ {
+     # Note: simply reordered the keys to create a pseudo production key.
+     $SIGN_SBKT_PREFIX_PARAMS =  "-hka ${DEV_KEY_DIR}/hw_key_c -hkb "
+@@ -195,24 +252,48 @@ if ( $testRun )
+ }
+ 
+ ### Open POWER signing
+-my $OPEN_SIGN_REQUEST="$SIGNING_DIR/crtSignedContainer.pl -v "
+-    . "-hwPrivKeyA $DEV_KEY_DIR/hw_key_a.key "
++my $OPEN_SIGN_REQUEST="$SIGNING_DIR/crtSignedContainer.pl ";
++# By default key transition container is unused
++my $OPEN_SIGN_KEY_TRANS_REQUEST = $OPEN_SIGN_REQUEST;
++
++# Production signing parameters
++my $OPEN_PRD_SIGN_PARAMS = "--mode production "
++    . " --sign-project-config $SB_PROJECT_CONFIG_PATH";
++# Imprint key signing parameters
++my $OPEN_DEV_SIGN_PARAMS = " -hwPrivKeyA $DEV_KEY_DIR/hw_key_a.key "
+     . "-hwPrivKeyB $DEV_KEY_DIR/hw_key_b.key "
+     . "-hwPrivKeyC $DEV_KEY_DIR/hw_key_c.key "
+-    . "-swPrivKeyP $DEV_KEY_DIR/sw_key_a.key ";
++    . "-swPrivKeyP $DEV_KEY_DIR/sw_key_a.key";
+ 
+-# Key prefix used for secureboot key transition partition.
+-# Default key transition to same keys.
+-my $OPEN_SIGN_KEY_TRANS_REQUEST =  $OPEN_SIGN_REQUEST;
+-if ( $testRun )
++# Handle key transition and production signing logic
++# If in production mode key transition is invalid
++# If in key transition can move to either imprint or production keys
++# Default sign using imprint keys.
++if ($signMode{PRODUCTION()})
+ {
+-    # Note: simply reordered the keys to create a pseudo production key.
+-    $OPEN_SIGN_KEY_TRANS_REQUEST =  "-hka ${DEV_KEY_DIR}/hw_key_c -hkb "
+-            . "${DEV_KEY_DIR}/hw_key_b -hkc ${DEV_KEY_DIR}/hw_key_a "
+-            . "-skp ${DEV_KEY_DIR}/sw_key_a";
++    $OPEN_SIGN_REQUEST .= $OPEN_PRD_SIGN_PARAMS;
++    $OPEN_SIGN_KEY_TRANS_REQUEST = "";
++}
++elsif ($keyTransition{enabled} && $signMode{DEVELOPMENT()})
++{
++    $OPEN_SIGN_REQUEST .= $OPEN_DEV_SIGN_PARAMS;
++    if ($keyTransition{IMPRINT()})
++    {
++        $OPEN_SIGN_KEY_TRANS_REQUEST .= $OPEN_DEV_SIGN_PARAMS;
++    }
++    elsif ($keyTransition{PRODUCTION()})
++    {
++        $OPEN_SIGN_KEY_TRANS_REQUEST .= "$OPEN_PRD_SIGN_PARAMS --sign-project-FW-token SBKT";
++        print
++    }
++}
++else
++{
++    $OPEN_SIGN_REQUEST .= $OPEN_DEV_SIGN_PARAMS;
++    $OPEN_SIGN_KEY_TRANS_REQUEST = "";
+ }
+ 
+-# Secureboot headers
++### Secureboot headers
+ # Contains the appropriate flags, prefix, and file names.
+ my $randPrefix = "rand-".POSIX::ceil(rand(0xFFFFFFFF));
+ my %sb_hdrs = (
+@@ -247,6 +328,8 @@ $SETTINGS .= $install_all ? "Build Phase = install_all\n" : "";
+ $SETTINGS .= $testRun ? "Test Mode = Yes\n" : "Test Mode = No\n";
+ $SETTINGS .= $secureboot ? "Secureboot = Enabled\n" : "Secureboot = Disabled\n";
+ $SETTINGS .= %partitionsToCorrupt && $secureboot ? "Corrupt Partitions: ".Dumper \%partitionsToCorrupt : "";
++$SETTINGS .= $secureboot ? "Sign Mode = $sign_mode\n" : "";
++$SETTINGS .= $key_transition && $secureboot ? "Key Transition Mode = $key_transition\n" : "";
+ $SETTINGS .= "//====================================================//\n\n";
+ print $SETTINGS;
+ 
+@@ -340,7 +423,6 @@ foreach my $header (keys %sb_hdrs)
+ # Hardcoded defined order that binfiles should be handled.
+ my %partitionDeps = ( HBB => 0,
+                       HBI => 1);
+-
+ sub partitionDepSort
+ {
+     # If $a exists but $b does not, set $a < $b
+@@ -438,6 +520,12 @@ sub manipulateImages
+         my $openSigningFlags = OP_SIGNING_FLAG.$sb_hdrs{DEFAULT}{flags};
+         my $secureboot_hdr =  $sb_hdrs{DEFAULT}{file};
+ 
++        my $CUR_OPEN_SIGN_REQUEST = "$OPEN_SIGN_REQUEST $openSigningFlags";
++        if ($signMode{PRODUCTION()})
++        {
++            $CUR_OPEN_SIGN_REQUEST .= " --sign-project-FW-token $eyeCatch ";
++        }
++
+         # Used for corrupting partitions. By default all protected offsets start
+         # immediately after the container header which is size = PAGE_SIZE.
+         # *Note: this is before ECC.
+@@ -505,8 +593,7 @@ sub manipulateImages
+ 
+                         if($openSigningTool)
+                         {
+-                            run_command("$OPEN_SIGN_REQUEST "
+-                                . "$openSigningFlags "
++                            run_command("$CUR_OPEN_SIGN_REQUEST "
+                                 . "-protectedPayload $tempImages{PAYLOAD_TEXT} "
+                                 . "-out $tempImages{PROTECTED_PAYLOAD}");
+                         }
+@@ -524,8 +611,7 @@ sub manipulateImages
+                     {
+                         if($openSigningTool)
+                         {
+-                            run_command("$OPEN_SIGN_REQUEST "
+-                                . "$openSigningFlags  "
++                            run_command("$CUR_OPEN_SIGN_REQUEST "
+                                 . "-protectedPayload $bin_file.protected "
+                                 . "-out $tempImages{PROTECTED_PAYLOAD}");
+                         }
+@@ -544,8 +630,8 @@ sub manipulateImages
+                         {
+                             my $codeStartOffset = ($eyeCatch eq "HBB") ?
+                                 "-code-start-offset 0x00000180" : "";
+-                            run_command("$OPEN_SIGN_REQUEST "
+-                                . "$openSigningFlags $codeStartOffset "
++                            run_command("$CUR_OPEN_SIGN_REQUEST "
++                                . "$codeStartOffset "
+                                 . "-protectedPayload $bin_file "
+                                 . "-out $tempImages{HDR_PHASE}");
+                         }
+@@ -595,8 +681,7 @@ sub manipulateImages
+                 $callerHwHdrFields{configure} = 1;
+                 if($openSigningTool)
+                 {
+-                    run_command("$OPEN_SIGN_REQUEST "
+-                        . "$openSigningFlags "
++                    run_command("$CUR_OPEN_SIGN_REQUEST "
+                         . "-protectedPayload $bin_file "
+                         . "-out $tempImages{HDR_PHASE}");
+                 }
+@@ -667,7 +752,7 @@ sub manipulateImages
+             {
+                 run_command("dd if=/dev/urandom of=$tempImages{PAD_PHASE} count=1 bs=$size");
+             }
+-            elsif ($eyeCatch eq "SBKT" && $secureboot && $key_transition)
++            elsif ($eyeCatch eq "SBKT" && $secureboot && $keyTransition{enabled})
+             {
+                 $callerHwHdrFields{configure} = 1;
+                 create_sb_key_transition_container($tempImages{PAD_PHASE});
+@@ -962,6 +1047,8 @@ sub create_sb_key_transition_container
+ 
+     if($openSigningTool)
+     {
++        die "Key transition not allowed in $sign_mode mode" if ($OPEN_SIGN_KEY_TRANS_REQUEST eq "");
++
+         # Create a signed container with new production keys
+         run_command("$OPEN_SIGN_KEY_TRANS_REQUEST".OP_SIGNING_FLAG
+             . "$sb_hdrs{SBKT}{inner}{flags} -protectedPayload $tempImages{RAND_BLOB} "
+@@ -979,8 +1066,6 @@ sub create_sb_key_transition_container
+         run_command("$SIGNING_DIR/build -good -if $sb_hdrs{SBKT}{outer}{file} -of $o_file -bin $tempImages{PRD_KEY_FILE} $SIGN_BUILD_PARAMS");
+     }
+ 
+-
+-
+     # Clean up temp images
+     foreach my $image (keys %tempImages)
+     {
+@@ -1052,12 +1137,16 @@ print <<"ENDUSAGE";
+                         Multiple '--corrupt' options are allowed, but note the system will checkstop on the
+                             first bad partition so multiple may not be that useful.
+                         Example: --corrupt HBI --corrupt HBD=unpro
+-    --key-transition    Creates secureboot key transition container.
+-                        Default transitions to same keys
+-                        Default with [--test] is to transition to test production keys.
++    --sign-mode <development|production>   Indicates how to sign partitions with either development keys or production keys
++    --key-transition <imprint|production>   Indicates a key transition is needed and creates a secureboot key transition container.
++                                            With [--test] will transition to test dev keys.
++    --sign-server-location-config   Path to config file containing the host name, port, mode
++    --sign-project-token            The 'token' that matches a definition in the sign project config file
++                                    Example(PNOR eyeCatch in XML): --sign-project-token HBI
++    --sign-project-config           Path to ini-formatted file containing the 'list' of projects to use for each 'token'
++    --machine           Name of machine to build pnor for. [Required in production mode, Optional otherwise]
+ 
+   Current Limitations:
+-    - Issues with dependency on ENGD build for certain files such as SBE. This
+-      is why [--build-all | --install-all ] are used.
++    - Issues with dependency on ENGD build for certain files such as SBE. This is why [--build-all | --install-all ] are used.
+ ENDUSAGE
+ }
+diff --git a/src/build/tools/hb b/src/build/tools/hb
+index 29b0165..ce6dd6a 100755
+--- a/src/build/tools/hb
++++ b/src/build/tools/hb
+@@ -121,7 +121,8 @@ hb_helptext()
+         echo "      hb prime --test"
+         echo
+         echo "  Copies hostboot images and simics scripts into the"
+-        echo "  simics workspace."
++        echo "  simics workspace. If both '--test' and '--secureboot' are"
++        echo "  enabled, a secureboot key transition container is created"
+         echo
+         echo "  Options:"
+         echo "      --test : Copy test images (as opposed to non-test)."
+-- 
+2.9.2
+
