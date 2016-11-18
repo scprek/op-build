@@ -1,0 +1,56 @@
+From 175d6afe132252a6ee7e02198df9a65658672dd5 Mon Sep 17 00:00:00 2001
+From: Stephen Cprek <smcprek@us.ibm.com>
+Date: Fri, 18 Nov 2016 11:51:51 -0600
+Subject: [PATCH] Assert when ContainerHeader parser determines a header
+ invalid
+
+https://github.com/open-power/hostboot/issues/70
+
+Change-Id: If5c18b5918200e741558090a1876f8794c8933e5
+Github: fixes open-power/hostboot#70
+---
+ src/include/usr/secureboot/containerheader.H | 1 +
+ src/usr/secureboot/base/containerheader.C    | 8 ++++++++
+ 2 files changed, 9 insertions(+)
+
+diff --git a/src/include/usr/secureboot/containerheader.H b/src/include/usr/secureboot/containerheader.H
+index c5188e6..9544647 100644
+--- a/src/include/usr/secureboot/containerheader.H
++++ b/src/include/usr/secureboot/containerheader.H
+@@ -200,6 +200,7 @@ class ContainerHeader
+         /**
+          * @brief Weak check to determine if secureboot header looks right.
+          *        Also sets iv_isValid private member
++         *        Asserts if iv_isValid ends up false
+          */
+         void validate();
+ 
+diff --git a/src/usr/secureboot/base/containerheader.C b/src/usr/secureboot/base/containerheader.C
+index cfd28f4..328bb8d 100644
+--- a/src/usr/secureboot/base/containerheader.C
++++ b/src/usr/secureboot/base/containerheader.C
+@@ -23,6 +23,7 @@
+ /*                                                                        */
+ /* IBM_PROLOG_END_TAG                                                     */
+ #include <secureboot/containerheader.H>
++#include <console/consoleif.H>
+ 
+ extern trace_desc_t* g_trac_secure;
+ 
+@@ -204,6 +205,13 @@ void ContainerHeader::validate()
+         && (iv_headerInfo.hw_prefix_hdr.sw_key_count >= SW_KEY_COUNT_MIN)
+         && (iv_headerInfo.hw_prefix_hdr.sw_key_count <= SW_KEY_COUNT_MAX)
+         && (iv_headerInfo.sw_hdr.payload_size != 0);
++    #ifdef CONFIG_CONSOLE
++        if (!iv_isValid)
++        {
++            CONSOLE::displayf(SECURE_COMP_NAME, "Secureboot header is not formatted properly\n");
++        }
++    #endif
++    assert(iv_isValid, "ContainerHeader: header is not formatted properly");
+ }
+ 
+ void ContainerHeader::safeMemCpyAndInc(void* i_dest, const uint8_t* &io_hdr,
+-- 
+2.9.2
+
