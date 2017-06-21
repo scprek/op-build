@@ -1,5 +1,6 @@
 #!/bin/bash
 # jenkins test
+# jenkins test2
 __PWD=`pwd`
 
 if [ -e ./customrc ]; then
